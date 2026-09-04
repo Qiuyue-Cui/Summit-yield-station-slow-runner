@@ -1063,7 +1063,11 @@ def _is_msgraph_config_valid(cfg: dict) -> bool:
 
 @st.cache_data(show_spinner=False, ttl=3300)
 def _msgraph_get_access_token(tenant_id: str, client_id: str, client_secret: str) -> str:
-    token_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
+    tenant = _normalize_tenant_id(tenant_id)
+    if not tenant:
+        raise RuntimeError("msgraph.tenant_id is empty or invalid.")
+
+    token_url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
     payload = {
         "client_id": client_id,
         "client_secret": client_secret,
@@ -1077,6 +1081,13 @@ def _msgraph_get_access_token(tenant_id: str, client_id: str, client_secret: str
         token_data = resp.json()
     except Exception:
         body_preview = (resp.text or "").strip().replace("\n", " ")[:300]
+        if "sign in to your account" in body_preview.lower():
+            raise RuntimeError(
+                "Microsoft Graph token endpoint returned a Sign-in HTML page instead of JSON. "
+                f"Check msgraph.tenant_id. Current normalized tenant='{tenant}'. "
+                "Use only Tenant ID GUID (Directory/Tenant ID) or tenant domain, not an authorize/login URL. "
+                f"HTTP {resp.status_code}, Content-Type={content_type or 'unknown'}."
+            )
         raise RuntimeError(
             "Microsoft Graph token endpoint returned a non-JSON response. "
             f"HTTP {resp.status_code}, Content-Type={content_type or 'unknown'}, "
@@ -1117,6 +1128,31 @@ def _normalize_drive_folder_path(folder_path: str) -> str:
     if not p.startswith("/"):
         p = "/" + p
     return p
+
+
+def _normalize_tenant_id(tenant_id: str) -> str:
+    """Normalize tenant id value from secrets.
+
+    Accepts GUID/domain directly, or full login URL by extracting the tenant segment.
+    """
+    raw = str(tenant_id).strip().strip('"').strip("'")
+    if not raw:
+        return ""
+
+    if raw.lower().startswith("http://") or raw.lower().startswith("https://"):
+        parsed = urllib.parse.urlparse(raw)
+        parts = [p for p in parsed.path.split("/") if p]
+        return parts[0] if parts else ""
+
+    if "login.microsoftonline.com" in raw.lower():
+        parsed = urllib.parse.urlparse("https://" + raw)
+        parts = [p for p in parsed.path.split("/") if p]
+        return parts[0] if parts else ""
+
+    if "/" in raw:
+        return raw.split("/")[0].strip()
+
+    return raw
 
 
 def _list_graph_folder_files(token: str, site_hostname: str, site_path: str, folder_path: str) -> list[dict]:
