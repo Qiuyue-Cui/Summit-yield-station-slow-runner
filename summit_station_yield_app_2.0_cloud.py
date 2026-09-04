@@ -7,6 +7,7 @@ import html
 import urllib.parse
 import json
 import posixpath
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
@@ -994,7 +995,7 @@ def _get_onedrive_urls_from_secrets() -> list[str]:
     # Preferred format:
     # [onedrive]
     # urls = ["https://...file1.csv", "https://...file2.xlsx"]
-    raw_urls = secret_group.get("urls") if isinstance(secret_group, dict) else None
+    raw_urls = secret_group.get("urls") if isinstance(secret_group, Mapping) else None
     if isinstance(raw_urls, list):
         urls.extend([str(u).strip() for u in raw_urls if str(u).strip()])
     elif isinstance(raw_urls, str):
@@ -1003,7 +1004,7 @@ def _get_onedrive_urls_from_secrets() -> list[str]:
     # Backward-compatible single URL keys.
     for key in ["url", "ONEDRIVE_URL", "ONEDRIVE_FILE_URL"]:
         value = None
-        if isinstance(secret_group, dict):
+        if isinstance(secret_group, Mapping):
             value = secret_group.get(key)
         if not value:
             try:
@@ -1030,7 +1031,7 @@ def _get_msgraph_config_from_secrets() -> dict:
     except Exception:
         return {}
 
-    if not isinstance(cfg, dict):
+    if not isinstance(cfg, Mapping):
         return {}
 
     return {
