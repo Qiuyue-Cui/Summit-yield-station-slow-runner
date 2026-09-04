@@ -1379,6 +1379,7 @@ with st.sidebar:
 
 raw_paths = []
 data_source_mode = ""
+source_errors: list[tuple[str, str]] = []
 if uploaded_files:
     data_source_mode = "Manual Upload"
     save_path = Path("./uploads")
@@ -1405,41 +1406,47 @@ if uploaded_files:
         out_path = str(out)
         st.session_state["uploaded_raw_paths"][cache_key] = out_path
         raw_paths.append(out_path)
-elif msgraph_enabled:
-    data_source_mode = "Microsoft Graph (Secrets)"
-    try:
-        raw_paths = _download_msgraph_files(
-            tenant_id=msgraph_cfg["tenant_id"],
-            client_id=msgraph_cfg["client_id"],
-            client_secret=msgraph_cfg["client_secret"],
-            site_hostname=msgraph_cfg["site_hostname"],
-            site_path=msgraph_cfg["site_path"],
-            drive_folder_path=msgraph_cfg["drive_folder_path"],
-            file_extensions=tuple(msgraph_cfg["file_extensions"]),
-            file_name_contains=msgraph_cfg["file_name_contains"],
-            max_files=int(msgraph_cfg["max_files"]),
-        )
-    except Exception:
-        st.error("Failed to load source files via Microsoft Graph.")
-        with st.expander("Click to view Microsoft Graph error", expanded=True):
-            st.code(traceback.format_exc(), language="text")
-        st.stop()
-elif onedrive_urls:
-    data_source_mode = "OneDrive (Secrets)"
-    try:
-        raw_paths = _download_onedrive_files(tuple(onedrive_urls))
-    except Exception:
-        st.error("Failed to download OneDrive source file(s).")
-        with st.expander("Click to view OneDrive download error", expanded=True):
-            st.code(traceback.format_exc(), language="text")
-        st.stop()
 else:
-    data_source_mode = "Local Default Path"
-    raw_paths = default_raw_paths()
+    if msgraph_enabled:
+        data_source_mode = "Microsoft Graph (Secrets)"
+        try:
+            raw_paths = _download_msgraph_files(
+                tenant_id=msgraph_cfg["tenant_id"],
+                client_id=msgraph_cfg["client_id"],
+                client_secret=msgraph_cfg["client_secret"],
+                site_hostname=msgraph_cfg["site_hostname"],
+                site_path=msgraph_cfg["site_path"],
+                drive_folder_path=msgraph_cfg["drive_folder_path"],
+                file_extensions=tuple(msgraph_cfg["file_extensions"]),
+                file_name_contains=msgraph_cfg["file_name_contains"],
+                max_files=int(msgraph_cfg["max_files"]),
+            )
+        except Exception:
+            source_errors.append(("Microsoft Graph", traceback.format_exc()))
+            raw_paths = []
+
+    if (not raw_paths) and onedrive_urls:
+        data_source_mode = "OneDrive (Secrets)"
+        try:
+            raw_paths = _download_onedrive_files(tuple(onedrive_urls))
+        except Exception:
+            source_errors.append(("OneDrive", traceback.format_exc()))
+            raw_paths = []
+
+    if not raw_paths:
+        data_source_mode = "Local Default Path"
+        raw_paths = default_raw_paths()
+
+if source_errors:
+    with st.sidebar:
+        st.warning("Auto source failed. See details below; you can still upload files manually.")
+        for source_name, err_text in source_errors:
+            with st.expander(f"{source_name} error details", expanded=False):
+                st.code(err_text, language="text")
 
 if not raw_paths:
     with st.sidebar:
-        st.info("No data source found. Upload raw file(s) or configure OneDrive secrets.")
+        st.info("No data source found. Upload raw file(s) or configure Microsoft Graph/OneDrive secrets.")
     st.stop()
 
 with st.sidebar:
