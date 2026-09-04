@@ -69,6 +69,8 @@ LEGACY_TO_CURRENT_CONFIG_NAME = {
 CURRENT_TO_LEGACY_CONFIG_NAME = {v: k for k, v in LEGACY_TO_CURRENT_CONFIG_NAME.items()}
 CONFIG_FILTER_COLUMNS = ["ORG_SBR_NUM", "DRIVE_SBR_NUM", "HDA_CODE", "HGA_SUPPLIER", "MEDIA_TYPE"]
 CONFIG_STATE_FILE = Path("./summit_config_state.json")
+CONFIG_LOGIN_USERNAME = "309416"
+CONFIG_LOGIN_PASSWORD = "Cqy001688"
 
 
 def load_config_state() -> dict:
@@ -484,6 +486,36 @@ def is_localhost_session() -> bool:
         )
     except Exception:
         return False
+
+
+def _open_config_login_dialog_if_needed() -> bool:
+    """Return True when config editing is authenticated for this browser session."""
+    if "config_auth_ok" not in st.session_state:
+        st.session_state["config_auth_ok"] = False
+
+    if st.session_state.get("config_auth_ok", False):
+        return True
+
+    # Prefer modal dialog when available; fallback to inline form on older Streamlit.
+    if hasattr(st, "dialog"):
+        @st.dialog("Config Login Required")
+        def _config_login_dialog():
+            st.caption("Enter username and password to unlock Config Settings.")
+            with st.form("config_login_form_dialog", clear_on_submit=False):
+                username = st.text_input("Username")
+                password = st.text_input("Password", type="password")
+                submitted = st.form_submit_button("Unlock")
+
+            if submitted:
+                if username == CONFIG_LOGIN_USERNAME and password == CONFIG_LOGIN_PASSWORD:
+                    st.session_state["config_auth_ok"] = True
+                    st.success("Login successful. Config Settings unlocked.")
+                    st.rerun()
+                else:
+                    st.error("Incorrect username or password.")
+
+        _config_login_dialog()
+    return bool(st.session_state.get("config_auth_ok", False))
 
 
 def birth_week_sort_key(w: str):
@@ -1438,12 +1470,30 @@ if "config_week_defs" not in st.session_state:
     st.session_state["config_week_defs"] = base_week_defs
 
 fiscal_week_label_options = ["Auto (earliest)"] + build_fiscal_week_labels(df)
-config_editable = is_localhost_session()
+config_editable = _open_config_login_dialog_if_needed()
 
 with st.sidebar:
     with st.expander("Config Settings (click to modify)", expanded=False):
-        if not config_editable:
-            st.warning("Config Settings is read-only on shared link. Open from localhost to modify.")
+        if not hasattr(st, "dialog") and not config_editable:
+            st.caption("Enter username/password to unlock Config Settings.")
+            with st.form("config_login_form_sidebar", clear_on_submit=False):
+                username = st.text_input("Username", key="cfg_login_user")
+                password = st.text_input("Password", type="password", key="cfg_login_pass")
+                submitted = st.form_submit_button("Unlock")
+            if submitted:
+                if username == CONFIG_LOGIN_USERNAME and password == CONFIG_LOGIN_PASSWORD:
+                    st.session_state["config_auth_ok"] = True
+                    config_editable = True
+                    st.success("Login successful. Please reopen this panel if needed.")
+                    st.rerun()
+                else:
+                    st.error("Incorrect username or password.")
+
+        if config_editable:
+            if st.button("Lock Config Settings", key="cfg_lock_btn"):
+                st.session_state["config_auth_ok"] = False
+                st.rerun()
+
         cfg_tabs = st.tabs(CONFIG_NAMES)
         for cfg_name, tab in zip(CONFIG_NAMES, cfg_tabs):
             with tab:
