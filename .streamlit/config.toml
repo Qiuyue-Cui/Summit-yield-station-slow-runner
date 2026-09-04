@@ -1,3 +1,5 @@
 [theme]
 base = "light"
-
+[server]
+maxUploadSize = 300
+maxMessageSize = 300
