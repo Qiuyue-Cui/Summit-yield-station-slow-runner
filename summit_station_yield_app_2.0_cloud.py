@@ -1071,11 +1071,33 @@ def _msgraph_get_access_token(tenant_id: str, client_id: str, client_secret: str
         "scope": "https://graph.microsoft.com/.default",
     }
     resp = requests.post(token_url, data=payload, timeout=60)
-    resp.raise_for_status()
-    token_data = resp.json()
+    content_type = str(resp.headers.get("content-type", "")).lower()
+
+    try:
+        token_data = resp.json()
+    except Exception:
+        body_preview = (resp.text or "").strip().replace("\n", " ")[:300]
+        raise RuntimeError(
+            "Microsoft Graph token endpoint returned a non-JSON response. "
+            f"HTTP {resp.status_code}, Content-Type={content_type or 'unknown'}, "
+            f"Body preview: {body_preview}"
+        )
+
+    if resp.status_code >= 400:
+        err = str(token_data.get("error", "")).strip()
+        desc = str(token_data.get("error_description", "")).strip()
+        raise RuntimeError(
+            "Microsoft Graph token request failed. "
+            f"HTTP {resp.status_code}, error={err or 'unknown'}, "
+            f"description={desc or 'n/a'}"
+        )
+
     token = str(token_data.get("access_token", "")).strip()
     if not token:
-        raise RuntimeError("Microsoft Graph token response does not contain access_token.")
+        raise RuntimeError(
+            "Microsoft Graph token response does not contain access_token. "
+            f"Response keys: {', '.join(sorted(token_data.keys()))}"
+        )
     return token
 
 
